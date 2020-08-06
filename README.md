@@ -3,6 +3,8 @@
 [Virtual Adversarial Training: A Regularization Method for Supervised and Semi-Supervised Learning](https://arxiv.org/abs/1704.03976)
 ## 模型结构
 BERT+Linear
+## 数据集
+情感分类数据集[sentiment.zip](/sentiment.zip)
 ## 消融实验
 ![result](/result.png)
 ## 注意事项
