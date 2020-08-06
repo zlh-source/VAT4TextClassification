@@ -415,7 +415,7 @@ class BertEncoder(nn.Module):
                 hidden_states, attention_mask, head_mask[i], encoder_hidden_states, encoder_attention_mask
             )
             hidden_states = layer_outputs[0]
-            #�޸�
+            #ÐÞ¸Ä
             hidden_states_without_LN=layer_outputs[-1]
             if self.output_attentions:
                 all_attentions = all_attentions + (layer_outputs[1],)
@@ -1514,5 +1514,5 @@ class BertForQuestionAnswering(BertPreTrainedModel):
             end_loss = loss_fct(end_logits, end_positions)
             total_loss = (start_loss + end_loss) / 2
             outputs = (total_loss,) + outputs
-
+ 
         return outputs  # (loss), start_logits, end_logits, (hidden_states), (attentions)
