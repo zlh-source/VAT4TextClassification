@@ -1,9 +1,4 @@
 #! -*- coding:utf-8 -*-
-# 通过虚拟对抗训练进行半监督学习
-# use_vat=True比use_vat=False约有1%的提升
-# 数据集：情感分析数据集
-# 博客：https://kexue.fm/archives/7466
-
 import json
 import numpy as np
 from bert4keras.backend import keras
