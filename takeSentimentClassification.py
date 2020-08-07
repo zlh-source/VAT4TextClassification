@@ -1,4 +1,9 @@
 #! -*- coding:utf-8 -*-
+# 通过虚拟对抗训练进行半监督学习
+# use_vat=True比use_vat=False约有1%的提升
+# 数据集：情感分析数据集
+# 博客：https://kexue.fm/archives/7466
+from torch.autograd import Variable
 import json
 import numpy as np
 from bert4keras.backend import keras
@@ -18,11 +23,12 @@ import torch.optim as optim
 
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "5" #注意修改
+os.environ["CUDA_VISIBLE_DEVICES"] = "1" #注意修改
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #device=torch.device("cpu")
 
 # 配置信息
+iters=2
 seed=1
 steps_per_epoch=30
 alpha=1.0
@@ -30,13 +36,13 @@ warmup = 0.0
 weight_decay = 0
 lr=2e-5
 VAT_lr=1e-5
-batch_size=32
-num_epoch=100
+batch_size=28
+num_epoch=10
 num_classes = 2
 maxlen = 128
-train_frac = 0.01  # 标注数据的比例
+train_frac = 0.5  # 标注数据的比例
 use_vat = True  # 可以比较True/False的效果
-output_path="./dataset/sentiment/output/07/"
+output_path="./dataset/sentiment/output/02/"
 
 if not os.path.exists(output_path):
     os.makedirs(output_path)
@@ -98,7 +104,6 @@ train_generator = data_generator(train_data, batch_size).forfit()
 valid_generator = data_generator(valid_data, batch_size)
 test_generator = data_generator(test_data, batch_size)
 vat_generator=data_generator(unlabeled_data, batch_size).forfit()
-
 class TextModel(BertPreTrainedModel):
     def __init__(self, config):
         super(TextModel, self).__init__(config)
@@ -163,8 +168,9 @@ if __name__ == '__main__':
     ]
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
-
-    vat_optimizer = optim.Adam(model.parameters(), lr=VAT_lr)
+    # scheduler = get_linear_schedule_with_warmup(
+    #     optimizer, num_warmup_steps=warmup * t_total, num_training_steps=t_total
+    # )
 
 
     best_val_acc,best_test_acc=0.0,0.0
@@ -175,32 +181,30 @@ if __name__ == '__main__':
         epoch_vat_loss = 0
         with tqdm(total=steps_per_epoch, desc="train", ncols=80) as t:
             for i, batch in zip(range(steps_per_epoch),train_generator):
+                if use_vat:
+                    vat_batch=next(vat_generator)
+                    vat_batch = [torch.tensor(d).to(device) for d in vat_batch]
+                    batch_token_ids, batch_mask_ids, _ = vat_batch
+                    logits_vat = model(token_ids=batch_token_ids, mask_token_ids=batch_mask_ids) #干净样本的结果
+                    r_adv=virtual_adversarial_training(model,batch_token_ids, batch_mask_ids,logits=logits_vat,iters=iters) #最优噪音
+                    r_adv = Variable(r_adv.to(device), requires_grad=True)
+                    y_hat= model(token_ids=batch_token_ids, mask_token_ids=batch_mask_ids,noise=r_adv)
+                    #logits_vat = model(token_ids=batch_token_ids, mask_token_ids=batch_mask_ids) #logits有梯度
+                    logits_vat = Variable(logits_vat.to(device), requires_grad=False)
+                    vat_loss = KLD(input=y_hat, target=logits_vat) #两个都应该计算梯度
+                    epoch_vat_loss += (vat_loss.item() / steps_per_epoch)
+
                 batch = [torch.tensor(d).to(device) for d in batch]
                 batch_token_ids, batch_mask_ids, batch_labels = batch
                 logits = model(token_ids=batch_token_ids, mask_token_ids=batch_mask_ids)
                 loss=KLD(target=batch_labels,input=logits,target_from_logits=False)
-                # loss.backward()
-                # optimizer.step()
-                # scheduler.step()  # Update learning rate schedule
-                # model.zero_grad()
-                #vat
                 if use_vat:
-                    batch=next(vat_generator)
-                    batch = [torch.tensor(d).to(device) for d in batch]
-                    batch_token_ids, batch_mask_ids, _ = batch
-                    r_adv,logits=virtual_adversarial_training(model,batch_token_ids, batch_mask_ids)
-                    y_hat= model(token_ids=batch_token_ids, mask_token_ids=batch_mask_ids,noise=r_adv)
-                    vat_loss = KLD(input=y_hat, target=logits)
-                    epoch_vat_loss += (vat_loss.item() / steps_per_epoch)
-                    # vat_loss.backward()
-                    # vat_optimizer.step()
-                    # vat_scheduler.step()  # Update learning rate schedule
-                    # model.zero_grad()
                     loss=loss+alpha*vat_loss
                 loss.backward()
                 optimizer.step()
+                #scheduler.step()
                 model.zero_grad()
-
+                #torch.cuda.empty_cache()
                 step += 1
                 epoch_loss += (loss.item()/steps_per_epoch)
 
